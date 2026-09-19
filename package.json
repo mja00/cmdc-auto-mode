@@ -15,9 +15,12 @@
 	"scripts": {
 		"lint": "eslint .",
 		"typecheck": "tsc --noEmit",
-		"test": "node --test test/policy.test.ts",
+		"test": "node --test test/policy.test.ts test/redteam/cost.test.ts test/redteam/unroll.test.ts test/redteam/mutations.test.ts test/redteam/scoring.test.ts test/redteam/surface.test.ts test/redteam/pipeline.test.ts",
 		"test:live": "node test/live.ts",
-		"test:corpus": "node test/corpus.ts"
+		"test:corpus": "node test/corpus.ts",
+		"test:redteam": "node test/redteam/run.ts",
+		"test:redteam:stub": "node test/redteam/run.ts --stub",
+		"test:redteam:evolve": "node test/redteam/evolve.ts"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.0",

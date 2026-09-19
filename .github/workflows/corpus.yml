@@ -23,3 +23,10 @@ jobs:
         run: npm run test:corpus
         env:
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+      # The adversarial suite. A failure here means the screener allowed something the
+      # corpus says must never run unattended - a bug, not flakiness - so the job goes red
+      # and the finding gets promoted into test/redteam/attacks.json.
+      - name: Red-team the screener against live TypeSafe Jev
+        run: npm run test:redteam
+        env:
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
