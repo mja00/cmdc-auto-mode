@@ -1,0 +1,7 @@
+# Local Command Code state: settings, permissions, taste, and the mod registry.
+# Never commit this - it holds machine-specific paths and preferences.
+.commandcode/
+
+node_modules/
+.DS_Store
+*.log
