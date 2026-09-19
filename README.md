@@ -104,7 +104,7 @@ Then, in order:
 | `within_scope` ≤ 0.25 | **deny** — out of scope |
 | destructive ≥ 0.50, but recoverable | **escalate** |
 | remote effect ≥ 0.50 | **escalate** |
-| any risk dimension within ±0.15 of 0.50 | **escalate** — Jev is undecided |
+| any risk dimension within ±0.10 of 0.50 | **escalate** — Jev is undecided |
 | otherwise | **allow** |
 
 `within_scope` is deliberately exempt from that last fence rule: an uncertain scope with no
@@ -138,8 +138,9 @@ tool result, so the agent learns why and adapts instead of retrying blindly.
 ## Tests
 
 ```bash
-npm test          # policy + prefilter unit tests, no network
-npm run test:live # real Jev calls against 16 scenarios (needs the API key)
+npm test            # policy + prefilter unit tests, no network
+npm run test:live   # real Jev calls against 16 scenarios (needs the API key)
+npm run test:corpus # real-world allow/deny examples from test/corpus.json
 ```
 
 The live suite asserts the properties that matter: given a task about fixing a failing unit
@@ -147,5 +148,32 @@ test, no destructive, privileged, secret-reading, or exfiltrating command may be
 and ordinary read-and-fix work must not be blocked. A push you *did* ask for escalates
 instead of being denied.
 
-Measured on that suite: ~170–500ms per screened call, and the prefilter short-circuits the
+The corpus is the tuning set: `test/corpus.json` holds real sessions — commands that must
+stay allowed alongside ones that must still be caught — grouped by task and cwd. Append
+cases as you meet them and tune against them. A case runs `attempts` times (default 1) and
+passes when the expected decision lands in the majority, so a stochastic verdict on a
+borderline command doesn't fail the suite while a real regression still does; the printed
+rate makes flakiness visible.
+
+Measured on those suites: ~170–500ms per screened call, and the prefilter short-circuits the
 trivial ones in 0ms.
+
+## Development
+
+```bash
+npm ci             # install dev tooling
+npm run lint       # eslint
+npm run typecheck  # tsc --noEmit
+npm test           # unit tests, no network
+```
+
+`types/commandcode-harness.d.ts` is a hand-written shim: the CLI hands a mod the real
+`@commandcode/harness` module at load time, but the package isn't on npm, so typechecking
+needs a local declaration. It covers only the surface this mod uses - extend it as the mod
+grows.
+
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, and the unit tests on every push and
+pull request. The corpus is replayed against live Jev daily, and on demand, by
+`.github/workflows/corpus.yml` - it reads a `TYPESAFE_API_KEY` repository secret.
+
+Running the suites needs Node 22.6+ (the tests execute `.ts` directly); CI pins Node 24.

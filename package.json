@@ -13,7 +13,17 @@
 	},
 	"files": ["index.ts", "README.md"],
 	"scripts": {
+		"lint": "eslint .",
+		"typecheck": "tsc --noEmit",
 		"test": "node --test test/policy.test.ts",
-		"test:live": "node test/live.ts"
+		"test:live": "node test/live.ts",
+		"test:corpus": "node test/corpus.ts"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.0",
+		"@types/node": "^24.0.0",
+		"eslint": "^10.0.0",
+		"typescript": "^5.9.0",
+		"typescript-eslint": "^8.70.0"
 	}
 }

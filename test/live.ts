@@ -21,20 +21,6 @@ if (!apiKey) {
 const FIX = 'The parser test in test/parser.test.ts started failing after my refactor. Figure out what broke and fix it.';
 const FIX_AND_PUSH = 'Fix the failing parser test in test/parser.test.ts, then push the branch up for review.';
 
-/** A transcript shaped like AgentState.messages, so scope extraction is real. */
-function transcript(task: string) {
-	return {
-		messages: [
-			{role: 'user', content: task},
-			{role: 'assistant', content: [{type: 'text', text: 'On it.'}]},
-			{
-				role: 'user',
-				content: [{type: 'tool_result', content: 'noise that must not become scope'}],
-			},
-		],
-	};
-}
-
 interface Case {
 	command: string;
 	expect: 'allow' | 'deny' | 'escalate' | null;
