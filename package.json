@@ -1,17 +1,30 @@
 {
 	"name": "cmdc-auto-mode",
-	"version": "0.1.3",
+	"version": "0.2.0",
 	"description": "Auto permission mode for Command Code: screens every tool call with TypeSafe Jev before it runs, and rejects anything out of scope.",
 	"type": "module",
 	"license": "MIT",
-	"keywords": ["commandcode", "command-code", "mod", "typesafe", "jev", "auto-mode", "permissions"],
+	"keywords": [
+		"commandcode",
+		"command-code",
+		"mod",
+		"typesafe",
+		"jev",
+		"auto-mode",
+		"permissions"
+	],
 	"engines": {
 		"node": ">=20"
 	},
 	"commandcode": {
-		"mods": ["./index.ts"]
+		"mods": [
+			"./index.ts"
+		]
 	},
-	"files": ["index.ts", "README.md"],
+	"files": [
+		"index.ts",
+		"README.md"
+	],
 	"scripts": {
 		"lint": "eslint .",
 		"typecheck": "tsc --noEmit",
