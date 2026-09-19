@@ -6,7 +6,14 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 
-import {decide, extractTask, prefilter, DEFAULT_POLICY} from '../index.ts';
+import {
+	decide,
+	extractTask,
+	isYoloLaunch,
+	prefilter,
+	resolveInitialEnabled,
+	DEFAULT_POLICY,
+} from '../index.ts';
 
 const policy = DEFAULT_POLICY;
 
@@ -139,6 +146,19 @@ test('escalates when a judgement sits on the fence', () => {
 	assert.equal(decideWith({...clean, remote_effect: 0.5}), 'escalate');
 });
 
+test('an undecided scope alone does not escalate', () => {
+	// A coin-flip on scope with nothing risky raised is benign work, not a prompt -
+	// driving a server or writing a scratch input should not stop for a human.
+	assert.equal(decideWith({...clean, within_scope: 0.5}), 'allow');
+	assert.equal(decideWith({...clean, within_scope: 0.42}), 'allow');
+});
+
+test('an undecided scope does not mask a risky dimension', () => {
+	// Scope is exempt from the fence rule; risk dimensions still escalate on their own.
+	assert.equal(decideWith({...clean, within_scope: 0.5, destructive: 0.5}), 'escalate');
+	assert.equal(decideWith({...clean, within_scope: 0.5, remote_effect: 0.5}), 'escalate');
+});
+
 test('a confident "not a concern" does not escalate', () => {
 	// 0.1 on every dimension is decisively quiet
 	assert.equal(decideWith({...clean, destructive: 0.1, remote_effect: 0.1}), 'allow');
@@ -183,4 +203,97 @@ test('extractTask tolerates a missing or malformed transcript', () => {
 	assert.equal(extractTask({}), '');
 	assert.equal(extractTask({messages: 'not an array'}), '');
 	assert.equal(extractTask({messages: [{role: 'user', content: 42}]}), '');
+});
+
+test('isYoloLaunch matches only the bypass launch flags', () => {
+	assert.equal(isYoloLaunch(['node', 'cmd', '--yolo']), true);
+	assert.equal(isYoloLaunch(['node', 'cmd', '--dangerously-skip-permissions']), true);
+	assert.equal(isYoloLaunch(['node', 'cmd', '-p', 'do a thing']), false);
+	// A lookalike arg is not the flag, and the value form is not how it is passed.
+	assert.equal(isYoloLaunch(['node', 'cmd', '--yolo-ish']), false);
+	assert.equal(isYoloLaunch(['node', 'cmd', '--yolo=false']), false);
+});
+
+test('resolveInitialEnabled: an explicit flag always wins', () => {
+	assert.equal(
+		resolveInitialEnabled({
+			flag: true,
+			persisted: false,
+			yolo: false,
+			yoloDefault: true,
+			hasApiKey: false,
+		}),
+		true,
+	);
+});
+
+test('resolveInitialEnabled: a persisted toggle beats the yolo default', () => {
+	// `/auto off` last session sticks even under --yolo.
+	assert.equal(
+		resolveInitialEnabled({
+			flag: false,
+			persisted: false,
+			yolo: true,
+			yoloDefault: true,
+			hasApiKey: true,
+		}),
+		false,
+	);
+	assert.equal(
+		resolveInitialEnabled({
+			flag: false,
+			persisted: true,
+			yolo: false,
+			yoloDefault: true,
+			hasApiKey: true,
+		}),
+		true,
+	);
+});
+
+test('resolveInitialEnabled: a fresh yolo launch starts screening on', () => {
+	assert.equal(
+		resolveInitialEnabled({
+			flag: false,
+			persisted: undefined,
+			yolo: true,
+			yoloDefault: true,
+			hasApiKey: true,
+		}),
+		true,
+	);
+});
+
+test('resolveInitialEnabled: yolo stays off without a key, without yolo, or when opted out', () => {
+	// No key + fail-closed would block every screened call, so never default on.
+	assert.equal(
+		resolveInitialEnabled({
+			flag: false,
+			persisted: undefined,
+			yolo: true,
+			yoloDefault: true,
+			hasApiKey: false,
+		}),
+		false,
+	);
+	assert.equal(
+		resolveInitialEnabled({
+			flag: false,
+			persisted: undefined,
+			yolo: true,
+			yoloDefault: false,
+			hasApiKey: true,
+		}),
+		false,
+	);
+	assert.equal(
+		resolveInitialEnabled({
+			flag: false,
+			persisted: undefined,
+			yolo: false,
+			yoloDefault: true,
+			hasApiKey: true,
+		}),
+		false,
+	);
 });

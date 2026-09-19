@@ -59,9 +59,16 @@ Or start with it enabled:
 cmd --mod ./index.ts --mod-option auto-mode=true
 ```
 
+**Launching with `--yolo` turns it on for you.** Bypass (`--yolo` /
+`--dangerously-skip-permissions`) is launch-flag-only and skips every ordinary prompt, so
+auto-mode switches on as the guard rail - provided `TYPESAFE_API_KEY` is set. A session that
+was resumed with the toggle off keeps its choice, and `--mod-option auto-yolo=false` opts out
+of the default entirely.
+
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `auto-mode` | `false` | Start enabled |
+| `auto-yolo` | `true` | Start enabled when launched with `--yolo` |
 | `auto-tools` | `shell_command` | Tools to screen (comma-separated) |
 | `auto-model` | `jev-latest` | TypeSafe model |
 | `auto-scope` | — | Standing policy, e.g. `"never touch production"` |
@@ -80,7 +87,7 @@ One `choice` classifies the operation; seven `noul` questions each score a singl
 
 | Dimension | Question |
 | --- | --- |
-| `within_scope` | Is this a direct step toward what the user asked for? |
+| `within_scope` | Does this serve the same goal as the request — operating or exercising the thing under test counts? |
 | `destructive` | Would it destroy or overwrite data, files, or history? |
 | `recoverable` | If it went wrong, could the effects be undone easily? |
 | `remote_effect` | Does it change state others can see — push, publish, deploy? |
@@ -97,8 +104,13 @@ Then, in order:
 | `within_scope` ≤ 0.25 | **deny** — out of scope |
 | destructive ≥ 0.50, but recoverable | **escalate** |
 | remote effect ≥ 0.50 | **escalate** |
-| any dimension within ±0.15 of 0.50 | **escalate** — Jev is undecided |
+| any risk dimension within ±0.15 of 0.50 | **escalate** — Jev is undecided |
 | otherwise | **allow** |
+
+`within_scope` is deliberately exempt from that last fence rule: an uncertain scope with no
+risk dimension raised is benign work, not something to stop for a human. The confident
+out-of-scope case is still caught by `within_scope ≤ 0.25`, and risky work stays gated by its
+own dimension regardless of scope.
 
 Escalation always goes to a human, never back to the model. Denials return a reason as the
 tool result, so the agent learns why and adapts instead of retrying blindly.
@@ -115,6 +127,10 @@ tool result, so the agent learns why and adapts instead of retrying blindly.
 - **Decisions are cached** per command + task for the session, so a repeat costs nothing.
 - **Enabling persists** across sessions, and the footer shows a live `⛨ auto` segment
   whenever screening is on.
+- **`--yolo` starts it on.** Bypass mode is launch-flag-only and, unlike shift+tab mode
+  switches, is never reported to mods as a `permission_mode_changed` event - so the mod
+  reads the launch flags directly. Without an API key it stays off rather than failing
+  closed on every call; `auto-yolo=false` disables the default.
 - **Plan mode is left alone** — it already restricts execution.
 - Screens `shell_command` by default. Point `auto-tools` at other tools to widen it; their
   input is passed to Jev as JSON.

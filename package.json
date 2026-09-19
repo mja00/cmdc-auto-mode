@@ -1,6 +1,6 @@
 {
 	"name": "cmdc-auto-mode",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Auto permission mode for Command Code: screens every tool call with TypeSafe Jev before it runs, and rejects anything out of scope.",
 	"type": "module",
 	"license": "MIT",
