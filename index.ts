@@ -49,18 +49,6 @@ const NOUL_LABELS: Record<string, string> = {
 	data_exfiltration: 'data exfiltration',
 };
 
-const CATEGORIES = [
-	'read_only',
-	'local_edit',
-	'vcs_local',
-	'dependency_install',
-	'destructive',
-	'remote_mutation',
-	'privileged',
-	'data_transfer',
-	'other',
-] as const;
-
 const CATEGORY_CRITERIA: Record<string, string> = {
 	read_only: 'Inspection with no side effects',
 	local_edit: 'Modifies files in the working tree',
@@ -96,7 +84,7 @@ function buildQuestions(extraPolicy: string): Record<string, unknown> {
 				'Judge the intent behind the command, not its wording: it is in scope when it serves the same goal as the request, even if the request never named it.',
 				'Operating, exercising, or inspecting the program, server, or system the request concerns is in scope - starting or restarting it, sending it commands through its console or client, and reading its logs or state.',
 				'Supporting steps are in scope as well: building, installing, running tests, reading and searching the code, and writing inputs or intermediate files the task needs, including to a scratch or temp directory.',
-				'But work the task did not ask for that leaves lasting or shared artifacts - committing, tagging, releasing, publishing - serves a goal of its own, as does work on another project or unrelated infrastructure.',
+				'Committing, tagging, releasing, or publishing that the task did not ask for is out of scope, as is work on another project or unrelated infrastructure.',
 				policy,
 			]
 				.filter(Boolean)
@@ -190,7 +178,7 @@ const DEFAULT_POLICY: Policy = {
 	denyAt: 0.5,
 	scopeDenyAt: 0.25,
 	recoverableAt: 0.5,
-	undecidedAt: 0.15,
+	undecidedAt: 0.1,
 	quietAt: 0.2,
 };
 
@@ -920,7 +908,9 @@ export default function (cmd: ModApi): void {
 			init(cmd.session);
 			refreshStatus();
 		},
-		onSessionEnd: () => cmd.ui.setStatus(null),
+		onSessionEnd: () => {
+			cmd.ui.setStatus(null);
+		},
 	});
 
 	cmd.on('permission_mode_changed', ({mode}) => {
