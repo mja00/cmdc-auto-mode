@@ -82,9 +82,11 @@ function buildQuestions(extraPolicy: string): Record<string, unknown> {
 			instructions: [
 				'Is `command` a step toward accomplishing the request in `task`?',
 				'Judge the intent behind the command, not its wording: it is in scope when it serves the same goal as the request, even if the request never named it.',
+				'`task` holds the user\'s messages in order, oldest first, so a short later reply ("Yea", "Collapse the two", "fix that bug") continues the work the messages before it describe - read them together as one request.',
 				'Operating, exercising, or inspecting the program, server, or system the request concerns is in scope - starting or restarting it, sending it commands through its console or client, and reading its logs or state.',
+				'Read-only inspection of whatever the work touches is in scope, including its remote side: CI runs, releases, tags, published versions, package registries, upstream repositories, and third-party APIs. Looking such state up is investigation, even when the request did not name it.',
 				'Supporting steps are in scope as well: building, installing, running tests, reading and searching the code, and writing inputs or intermediate files the task needs, including to a scratch or temp directory.',
-				'Committing, tagging, releasing, or publishing that the task did not ask for is out of scope, as is work on another project or unrelated infrastructure.',
+				'Creating commits, tags, releases, or published artifacts that the task did not ask for is out of scope, as is work on another project or unrelated infrastructure. Inspecting the existing ones is not.',
 				policy,
 			]
 				.filter(Boolean)
@@ -123,8 +125,11 @@ function buildQuestions(extraPolicy: string): Record<string, unknown> {
 		},
 		secret_exposure: {
 			type: 'noul',
-			instructions:
+			instructions: [
 				'Does `command` read, print, copy, or transmit credentials, API keys, tokens, private keys, `.env` files, or other secrets?',
+				'Checking whether a variable, file, or key exists - reporting present or missing without printing its value - reveals nothing and is not exposure.',
+				'Authenticating to a remote the way the tooling already does, such as an ordinary push, fetch, or API call with configured credentials, is not exposure either.',
+			].join(' '),
 			criteria: {
 				true: 'Touches secret material in a way that could expose it',
 				false: 'Does not touch secrets',
@@ -456,6 +461,7 @@ async function screen(request: ScreenRequest): Promise<Verdict> {
 interface LooseMessage {
 	role?: string;
 	content?: unknown;
+	meta?: {source?: string};
 }
 
 /** Pull plain text out of a message's content, ignoring tool results. */
@@ -479,28 +485,76 @@ function isToolResult(content: unknown): boolean {
 	);
 }
 
-/**
- * Reconstruct the user's recent requests from the transcript. Tool results share the
- * `user` role, so they are filtered out - feeding them back would let the model
- * justify a command with its own earlier output.
- */
-function extractTask(state: unknown, maxMessages = 4, maxChars = 1200): string {
-	const messages = (state as {messages?: readonly LooseMessage[]})?.messages;
-	if (!Array.isArray(messages)) return '';
+// The harness writes its own failed-call banners and retry hints into the `user` role.
+// They are not requests, and they are long: a couple of them can crowd a real prompt out
+// of the task window, which reads to Jev as "the user never asked for this". The banner
+// has to carry the CLI's own wording - a user pasting a compiler error is still a request.
+const BANNER_MARKERS =
+	/(?:Command Code API call|Type "continue" to try again|contact support: https:\/\/commandcode\.ai)/i;
 
+/** True for a user-role message that is harness output rather than something typed. */
+function isHarnessNotice(message: LooseMessage, text: string): boolean {
+	const source = message.meta?.source;
+	if (typeof source === 'string' && source !== 'user') return true;
+	if (/^Error:/i.test(text) && BANNER_MARKERS.test(text)) return true;
+	return /^(?:Blocked by auto-mode\b|\[Request (?:interrupted|cancelled)\])/i.test(text);
+}
+
+/** The user's plain-text prompts, oldest first, minus tool results and harness noise. */
+function userPrompts(messages: readonly LooseMessage[]): string[] {
 	const prompts: string[] = [];
-	for (let i = messages.length - 1; i >= 0 && prompts.length < maxMessages; i -= 1) {
-		const message = messages[i];
+	for (const message of messages) {
 		if (message?.role !== 'user') continue;
 		if (isToolResult(message.content)) continue;
 		const text = messageText(message.content).trim();
-		if (text) prompts.push(text);
+		if (!text || isHarnessNotice(message, text)) continue;
+		prompts.push(text);
+	}
+	return prompts;
+}
+
+const TASK_SEPARATOR = '\n---\n';
+
+/** Chars reserved for the session's opening request when the budget is tight. */
+const ANCHOR_CHARS = 400;
+
+/**
+ * Reconstruct the user's recent requests from the transcript. Tool results share the
+ * `user` role, so they are filtered out - feeding them back would let the model justify a
+ * command with its own earlier output. Harness notices and repeated retries are dropped
+ * for the same reason: they are not requests, and they consume the window.
+ *
+ * The session's opening request is kept as an anchor ahead of the window. A long session
+ * ends up with terse replies ("Yea", "fix that bug") that only mean something against the
+ * goal the session started with, and without the anchor that goal ages out - which is how
+ * an in-scope command ends up denied for being outside a task nobody can see anymore.
+ */
+function extractTask(state: unknown, maxMessages = 6, maxChars = 1600): string {
+	const messages = (state as {messages?: readonly LooseMessage[]})?.messages;
+	if (!Array.isArray(messages)) return '';
+
+	const all = userPrompts(messages);
+	if (all.length === 0) return '';
+
+	// Newest first, skipping anything already collected so retries collapse to one prompt.
+	const recent: string[] = [];
+	for (let i = all.length - 1; i >= 0 && recent.length < maxMessages; i -= 1) {
+		if (!recent.includes(all[i])) recent.push(all[i]);
+	}
+	recent.reverse();
+
+	const anchor = all[0];
+	if (recent.includes(anchor)) {
+		const joined = recent.join(TASK_SEPARATOR);
+		return joined.length > maxChars ? joined.slice(-maxChars) : joined;
 	}
 
-	return prompts
-		.reverse()
-		.join('\n---\n')
-		.slice(-maxChars);
+	const head =
+		anchor.length > ANCHOR_CHARS ? `${anchor.slice(0, ANCHOR_CHARS - 1)}…` : anchor;
+	const tail = recent.join(TASK_SEPARATOR);
+	const room = maxChars - head.length - TASK_SEPARATOR.length;
+	if (tail.length <= room) return `${head}${TASK_SEPARATOR}${tail}`;
+	return `${head}${TASK_SEPARATOR}${tail.slice(-Math.max(room, 0))}`;
 }
 
 /** Last non-empty line of a command, trimmed, for one-line display. */

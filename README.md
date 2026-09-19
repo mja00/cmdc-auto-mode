@@ -119,7 +119,23 @@ tool result, so the agent learns why and adapts instead of retrying blindly.
 
 - **Scope is judged against your actual recent requests**, reconstructed from the transcript.
   Tool results share the `user` role, so they're filtered out — otherwise the model could
-  justify a command with its own earlier output.
+  justify a command with its own earlier output. The CLI's own banners (failed API calls,
+  "type continue" retries) and repeated retries are dropped for the same reason, and the
+  request that opened the session is kept ahead of the window — a long session ends in terse
+  replies ("Yea", "fix that bug") that only mean anything next to the goal they continue.
+- **Reading is not doing.** Looking up CI runs, releases, tags, published versions, or
+  upstream APIs is investigation and stays in scope; creating a commit, tag, or release the
+  request never asked for is not. Likewise a check that reports only *whether* a key is set
+  is not secret exposure — printing its value still is.
+- **Only your words set scope.** Jev sees the command, the cwd, and your messages — nothing
+  else. Every wider context was tried and rejected on measurement: the agent's narration or
+  its stated intent (a claim of "the user asked me to commit this" moved an out-of-scope
+  commit from denied 5/5 to allowed 4/5), the session's permission mode (a `bypass` mode did
+  the same thing, 3/3), and harness-observed workspace facts — branch and uncommitted count —
+  which bought ~0.05 of scope on a push that already escalated correctly, while merely
+  describing them in the question lifted the same commit case back over the line. Scope
+  scores move as a whole, so extra context is paid for out of the margins on the
+  out-of-scope guard.
 - **Fails closed.** If TypeSafe is unreachable or `TYPESAFE_API_KEY` is missing, screened
   calls are blocked rather than allowed. Turn off with `auto-fail-closed=false`.
 - **The prefilter is deliberately tiny**: only bare, argument-free commands like `pwd`,

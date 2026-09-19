@@ -205,6 +205,81 @@ test('extractTask tolerates a missing or malformed transcript', () => {
 	assert.equal(extractTask({messages: [{role: 'user', content: 42}]}), '');
 });
 
+test('extractTask keeps the request and standing instructions when notices crowd the window', () => {
+	// Reconstructed from a real session. The CLI wrote two "Local-only mode" banners into
+	// the user role and a retry duplicated a prompt, so the window held no actual task at
+	// all - and `git push`, which the user had asked for, came back denied as out of scope.
+	const notice =
+		'Error: Local-only mode: refused a Command Code API call (/alpha/generate). This CLI was started with --local-only, ' +
+		'CMD_LOCAL_ONLY, or "localOnly": true in ~/.commandcode/config.json, so nothing is sent to Command Code.\n\n' +
+		'Type "continue" to try again. If the issue persists, contact support: https://commandcode.ai/discord';
+	const state = {
+		messages: [
+			{role: 'user', content: 'Can we bump the action versions to their latests? Do it on a chore/ branch.'},
+			{role: 'assistant', content: [{type: 'text', text: 'Checking the workflow files.'}]},
+			{role: 'user', content: 'Commit and push'},
+			{role: 'user', content: 'Can we swap to using ubicloud runners?'},
+			{role: 'user', content: 'Collapse the two'},
+			{role: 'user', content: 'Okay put them on your recommendation and optimize CI.'},
+			{role: 'user', content: notice, meta: {messageId: 'c497cabd'}},
+			{role: 'user', content: 'Okay put them on your recommendation and optimize CI.'},
+			{role: 'user', content: 'Oh yea fix that bug'},
+		],
+	};
+	const task = extractTask(state);
+	// The goal the session started with, and the instruction to push, both survive.
+	assert.match(task, /bump the action versions/);
+	assert.match(task, /Do it on a chore\/ branch/);
+	assert.match(task, /Commit and push/);
+	assert.doesNotMatch(task, /Local-only mode/);
+	assert.doesNotMatch(task, /Type "continue" to try again/);
+	// The retry is one prompt, not two.
+	assert.equal(task.split('optimize CI').length - 1, 1);
+	assert.ok(task.indexOf('bump the action versions') < task.indexOf('Commit and push'));
+});
+
+test('extractTask ignores harness banners and messages that are not from the user', () => {
+	const state = {
+		messages: [
+			{role: 'user', content: 'Fix the failing test.'},
+			{
+				role: 'user',
+				content: 'Blocked by auto-mode (TypeSafe Jev): this command would expose secrets.',
+			},
+			{
+				role: 'user',
+				content: 'Error: the model call failed. Type "continue" to try again.',
+			},
+			{role: 'user', content: 'please continue from the summary', meta: {source: 'system'}},
+		],
+	};
+	assert.equal(extractTask(state), 'Fix the failing test.');
+});
+
+test('extractTask keeps a prompt that merely starts with error text', () => {
+	// Pasting a compiler error is a request, not a harness banner.
+	const state = {
+		messages: [{role: 'user', content: 'error[E0308]: mismatched types in parser.ts - fix this'}],
+	};
+	assert.match(extractTask(state), /mismatched types/);
+});
+
+test('extractTask keeps the opening request when the transcript outgrows the budget', () => {
+	const state = {
+		messages: [
+			{role: 'user', content: 'Ship the release build and keep the changelog current.'},
+			...Array.from({length: 12}, (_, i) => ({
+				role: 'user',
+				content: `follow-up prompt number ${i} `.repeat(20),
+			})),
+		],
+	};
+	const task = extractTask(state);
+	assert.match(task, /Ship the release build/);
+	assert.match(task, /number 11/);
+	assert.ok(task.length <= 1600, `task was ${task.length} chars`);
+});
+
 test('isYoloLaunch matches only the bypass launch flags', () => {
 	assert.equal(isYoloLaunch(['node', 'cmd', '--yolo']), true);
 	assert.equal(isYoloLaunch(['node', 'cmd', '--dangerously-skip-permissions']), true);
